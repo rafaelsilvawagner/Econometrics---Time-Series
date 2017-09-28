@@ -35,30 +35,18 @@ ARMAGARCH <- function(params,data,np,nq,nr,ns,dens) {
   }
   if (dens=="t") {
     v<-params[np+nq+nr+ns+2]
-    #verossim <- -(gamma((v+1)/2)/((gamma(v/2))*sqrt(pi*(v-2))*sqrt(sigma2)*(1+(errors^2)/(sigma2*(v-2)))^((v+1)/2)))
     verossim <- -(log(gamma((v+1)/2)/(sqrt((v-2)*pi)*gamma(v/2)))-log(sigma2)/2-((v+1)/2)*log(1+errors^2/(sigma2*(v-2))))
-    #verossim <- ((gamma((v+1/2)))/(sqrt(pi)*gamma(v/2))*(v-2)^(-1/2)*(sigma2)^(-1/2)*((1+errors^2/(sigma2*(v-2))))^(-(v+1)/2))
   } else if (dens=="ged") {
-    v<-params[np+nq+nr+ns+2]
-    #lambda<-sqrt(((2^(-2/v))*gamma(1/v))/gamma(3/v))
-    #verossim<- (v*exp(-(1/2)*(abs(errors/(lambda*sqrt(sigma2))))^v)*(1/sqrt(sigma2)))/(lambda*(2^((1+1/v))*gamma(1/v)))
-    lnlambda<- (log(2^(-2/v))+log(gamma(1/v))-log(gamma(3/v)))/2
-    
-    #LOG Kevin Sheppard
-    #verossim<- (log(v)-((abs(errors/sqrt(sigma2)))^v)/2-lnlambda-((v+1)/v)*log(2)-log(gamma(1/v)))
-  
-    # LOG http://cims.nyu.edu/~almgren/timeseries/Vol_Forecast1.pdf
-    #verossim<- -((log(v)-((abs(data/(exp(lnlambda)*sqrt(sigma2))))^v)/2)-log(sqrt(sigma2))-lnlambda-((1+1/v)*log(2)-log(gamma(1/v))))
-    
-    # LOG https://editorialexpress.com/cgi-bin/conference/download.cgi?db_name=ACE2005&paper_id=217
-    verossim<- -(log(v)-((abs(data/exp(lnlambda)))^v)/2-lnlambda-log(2)-(log(2)/v)-log(gamma(1/v)))
+      v <- params[np+nq+nr+ns+2]
+      lambda <- (2^(-2/v) * gamma(1/v) * gamma(3/v))^0.5
+      verossim <- log(v) + 0.5 * abs(errors/(lambda))^v - log(lambda * 2^(1+1/v) * gamma(1/v))
   } else if (dens=="PED") {
     #http://epublications.uef.fi/pub/urn_isbn_978-952-219-072-7/urn_isbn_978-952-219-072-7.pdf
     lambda<-params[np+nq+nr+ns+2]
     gam<-params[np+nq+nr+ns+3]
     #verossim<- -((1-gam^2)/(2*gamma(1+1/lambda)*lambda^(1/lambda))*exp(-((abs(data-gam*abs(data))^lambda))/lambda))
     verossim<- -(log(1-gam^2)-log(2)-log(gamma(1+1/lambda))-log(lambda)/lambda-(1/lambda)*((abs(data-gam*abs(data)))^lambda))
-    } else {
+  } else {
     verossim <- 0.5*(2*log(sqrt(sigma2)) + log(sigma2) + errors^2/sigma2 + log(2*pi))
   }
   return(list(LLF=sum(verossim),sigma2=sigma2,residuals=errors/sqrt(sigma2)))
@@ -68,7 +56,7 @@ ARMAGARCH <- function(params,data,np,nq,nr,ns,dens) {
 # install.packages("BatchGetSymbols")
 library(BatchGetSymbols)
 library(ggplot2)
-my.ticker <- c('^GSPC')
+my.ticker <- c('AAPL')
 first.date <- Sys.Date()-1500
 last.date <- Sys.Date()
 l.out <- BatchGetSymbols(tickers = my.ticker,first.date = first.date,last.date = last.date)
@@ -104,7 +92,7 @@ resultados.finais.t <- ARMAGARCH(resultados$par,data=returns[,1],np=1,nq=1,nr=1,
 df.t <- data.frame(returns,sigma2=resultados.finais.t$sigma2,residuals=resultados.finais.t$residuals)
 
 # Estima modelo ARMA(1,1)-GARCH(1,1) -Generalized Exponential Distribution
-init.params <- c(0.1,0.1,0.1,0.1,0.1,5)
+init.params <- c(0.1,0.1,0.1,0.1,0.1,1.01)
 # Define restrições
 ui <- rbind(c(0,0,1,0,0,0),c(0,0,0,1,0,0),c(0,0,0,0,1,0),c(0,0,0,-1,-1,0),c(0,0,0,0,0,1))
 ci <- c(0,0,0,-1,1+.Machine$double.eps)
@@ -114,7 +102,7 @@ ARMAGARCH.optim <- function(params,data,np,nq,nr,ns,dens) {
 resultados <- constrOptim(init.params,ARMAGARCH.optim,data=returns[,1],np=1,nq=1,nr=1,ns=1,grad=NULL,ui=ui,ci=ci,dens="ged")
 options(scipen=999)
 print(resultados$par)
-resultados.finais.GED <- ARMAGARCH(resultados$par,data=returns[,1],np=1,nq=1,nr=1,ns=1,dens="GED")
+resultados.finais.GED <- ARMAGARCH(resultados$par,data=returns[,1],np=1,nq=1,nr=1,ns=1,dens="ged")
 df.GED <- data.frame(returns,sigma2=resultados.finais.GED$sigma2,residuals=resultados.finais.GED$residuals)
 
 
@@ -168,5 +156,6 @@ p2.PED <- p2 + labs(x = 'Dates', y = 'Desvio padrão condicional')
 p3.PED <- ggAcf(df.PED$residuals^2, main="ACF do quadrado dos resíduos padronizados")
 
 grid.arrange(p1, p1, p1,p1, p2.normal, p2.t, p2.GED, p2.PED, p3.normal, p3.t, p3.GED, p3.PED, ncol=4, nrow=3)
-  
+
 SQR<-c(sum(df.normal$residuals^2),sum(df.t$residuals^2),sum(df.GED$residuals^2),sum(df.PED$residuals^2))
+SQR
