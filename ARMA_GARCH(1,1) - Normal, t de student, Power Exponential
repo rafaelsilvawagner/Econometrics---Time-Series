@@ -40,10 +40,20 @@ ARMAGARCH <- function(params,data,np,nq,nr,ns,dens) {
     #verossim <- ((gamma((v+1/2)))/(sqrt(pi)*gamma(v/2))*(v-2)^(-1/2)*(sigma2)^(-1/2)*((1+errors^2/(sigma2*(v-2))))^(-(v+1)/2))
   } else if (dens=="ged") {
     v<-params[np+nq+nr+ns+2]
-    lambda<-sqrt(((2^(-2/v))*gamma(1/v))/gamma(3/v))
-    verossim<- (v*exp(-(1/2)*(abs(errors/lambda))^v))/(lambda*(2^((1+1/v))*gamma(1/v)))
-    #verossim <- -(log(v)-(1/2)*(abs(errors/sqrt(sigma2)))^v-(-log(2)/v)+(log(gamma(1/v))/2)-(log(gamma(3/v))/2)-log(2)*((v+1)/v)-log(gamma(1/v)))
-  } else {
+    #lambda<-sqrt(((2^(-2/v))*gamma(1/v))/gamma(3/v))
+    #verossim<- (v*exp(-(1/2)*(abs(errors/(lambda*sqrt(sigma2))))^v)*(1/sqrt(sigma2)))/(lambda*(2^((1+1/v))*gamma(1/v)))
+    lnlambda<- -(log(2)/v)+(log(gamma(1/v))/2)-(log(gamma(3/v))/2)
+    
+    #LOG Kevin Sheppard
+    verossim<- (log(v)-((abs(errors/sqrt(sigma2)))^v)/2-lnlambda-((v+1)/v)*log(2)-log(gamma(1/v)))
+  
+    # LOG http://cims.nyu.edu/~almgren/timeseries/Vol_Forecast1.pdf
+    #verossim<- ((log(v)-((abs(data/(exp(lnlambda)*sqrt(sigma2))))^v)/2)-log(sqrt(sigma2))-lnlambda-((1+1/v)*log(2)-log(gamma(1/v))))
+    
+    # LOG https://editorialexpress.com/cgi-bin/conference/download.cgi?db_name=ACE2005&paper_id=217
+    #verossim<- ((log(v)-((abs(errors/exp(lnlambda)))^v) /2-lnlambda-((v+1)/v)*log(2)-log(gamma(1/v))))
+    
+    } else {
     verossim <- 0.5*(2*log(sqrt(sigma2)) + log(sigma2) + errors^2/sigma2 + log(2*pi))
   }
   return(list(LLF=sum(verossim),sigma2=sigma2,residuals=errors/sqrt(sigma2)))
@@ -97,11 +107,12 @@ options(scipen=999)
 print(resultados$par)
 
 # Retorna variáveis e avalia qualidade do ajuste
-resultados.finais <- ARMAGARCH(resultados$par,data=returns[,1],np=1,nq=1,nr=1,ns=1,dens="t")
+resultados.finais <- ARMAGARCH(resultados$par,data=returns[,1],np=1,nq=1,nr=1,ns=1,dens="ged")
 df <- data.frame(returns,sigma2=resultados.finais$sigma2,residuals=resultados.finais$residuals)
 # Faz gráfico 
 require(gridExtra)
 require(forecast)
+require(ggplot2)
 p1 <- ggplot(data = returns, aes(x = datas, y = retornos))
 p1 <- p1 + geom_line()
 p1 <- p1 + labs(x = 'Dates', y = 'Retornos')
@@ -113,4 +124,5 @@ p2 <- p2 + labs(x = 'Dates', y = 'Desvio padrão condicional')
 p3 <- ggAcf(df$residuals^2, main="ACF do quadrado dos resíduos padronizados")
 
 grid.arrange(p1, p2, p3, ncol=1)
+  
 
