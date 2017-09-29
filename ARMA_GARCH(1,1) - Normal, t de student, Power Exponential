@@ -37,10 +37,10 @@ ARMAGARCH <- function(params,data,np,nq,nr,ns,dens) {
     v<-params[np+nq+nr+ns+2]
     verossim <- -(log(gamma((v+1)/2)/(sqrt((v-2)*pi)*gamma(v/2)))-log(sigma2)/2-((v+1)/2)*log(1+errors^2/(sigma2*(v-2))))
   } else if (dens=="GED") {
-	v <- params[np+nq+nr+ns+2]
-	 lambda <- (2^(-2/v) * gamma(1/v)/gamma(3/v))^0.5
+    v <- params[np+nq+nr+ns+2]
+    lambda <- (2^(-2/v) * gamma(1/v)/gamma(3/v))^0.5
     verossim <- -log(v) + 0.5 * abs(errors/(lambda))^v + log(lambda * 2^(1+1/v) * gamma(1/v))
-	} else {
+  } else {
     verossim <- 0.5*(2*log(sqrt(sigma2)) + log(sigma2) + errors^2/sigma2 + log(2*pi))
   }
   return(list(LLF=sum(verossim),sigma2=sigma2,residuals=errors/sqrt(sigma2)))
@@ -119,37 +119,51 @@ df.PED <- data.frame(returns,sigma2=resultados.finais.PED$sigma2,residuals=resul
 require(gridExtra)
 require(forecast)
 require(ggplot2)
-p1 <- ggplot(data = returns, aes(x = datas, y = retornos))
-p1 <- p1 + geom_line()
-p1 <- p1 + labs(x = 'Dates', y = 'Retornos')
-
-
+p1.normal <- ggplot(data = returns, aes(x = datas, y = retornos))
+p1.normal <- p1.normal + geom_line() + geom_line(data = returns-df.normal$residuals, colour = "red")
+p1.normal <- p1.normal + labs(x = 'Dates', y = 'Log-Retornos Previstos')
+p1.normal <- p1.normal + ggtitle("Standard Normal")
+  
 p2.normal <- ggplot(data = df.normal, aes(x = datas, y = sqrt(sigma2)))
-p2.normal <- p2.normal + geom_line()
+p2.normal <- p2.normal + geom_line(colour = "gold4")
 p2.normal <- p2.normal + labs(x = 'Dates', y = 'Desvio padrão condicional')
 
 p3.normal <- ggAcf(df.normal$residuals^2, main="ACF do quadrado dos resíduos padronizados")
 
+p1.t <- ggplot(data = returns, aes(x = datas, y = retornos))
+p1.t <- p1.t + geom_line() + geom_line(data = returns-df.t$residuals, colour = "red")
+p1.t <- p1.t + labs(x = 'Dates', y = 'Log-Retornos Previstos')
+p1.t <- p1.t + ggtitle("t Student")
+
 p2.t <- ggplot(data = df.t, aes(x = datas, y = sqrt(sigma2)))
-p2.t <- p2.t + geom_line()
+p2.t <- p2.t + geom_line(colour = "gold4")
 p2.t <- p2.t + labs(x = 'Dates', y = 'Desvio padrão condicional')
 
 p3.t <- ggAcf(df.t$residuals^2, main="ACF do quadrado dos resíduos padronizados")
 
+p1.GED <- ggplot(data = returns, aes(x = datas, y = retornos))
+p1.GED <- p1.GED + geom_line() + geom_line(data = returns-df.GED$residuals, colour = "red")
+p1.GED <- p1.GED + labs(x = 'Dates', y = 'Log-Retornos Previstos')
+p1.GED <- p1.GED + ggtitle("Generalized Error Distribution")
+
 p2.GED <- ggplot(data = df.GED, aes(x = datas, y = sqrt(sigma2)))
-p2.GED <- p2.GED + geom_line()
+p2.GED <- p2.GED + geom_line(colour = "gold4")
 p2.GED <- p2.GED + labs(x = 'Dates', y = 'Desvio padrão condicional')
 
 p3.GED <- ggAcf(df.GED$residuals^2, main="ACF do quadrado dos resíduos padronizados")
 
+p1.PED <- ggplot(data = returns, aes(x = datas, y = retornos))
+p1.PED <- p1.PED + geom_line() + geom_line(data = returns-df.PED$residuals, colour = "red")
+p1.PED <- p1.PED + labs(x = 'Dates', y = 'Log-Retornos Previstos')
+p1.PED <- p1.GED + ggtitle("Power Exponential Distribution")
 
 p2.PED <- ggplot(data = df.PED, aes(x = datas, y = sqrt(sigma2)))
-p2.PED <- p2.PED + geom_line()
-p2.PED <- p2.PED + labs(x = 'Dates', y = 'Desvio padrão condicional')
+p2.PED <- p2.PED + geom_line(colour = "gold4")
+p2.PED <- p2.PED + labs(x = 'Dates', y = 'Desvio padrão condicional',main='Power Exponential Distribution')
 
 p3.PED <- ggAcf(df.PED$residuals^2, main="ACF do quadrado dos resíduos padronizados")
 
-grid.arrange(p2.normal, p2.t, p2.GED, p2.PED, p3.normal, p3.t, p3.GED, p3.PED, ncol=4, nrow=2)
+grid.arrange(p1.normal, p1.t, p1.GED, p1.PED,p2.normal, p2.t, p2.GED, p2.PED, p3.normal, p3.t, p3.GED, p3.PED, ncol=4, nrow=3)
 
 SQR<-c(sum(df.normal$residuals^2),sum(df.t$residuals^2),sum(df.GED$residuals^2),sum(df.PED$residuals^2))
 SQR
