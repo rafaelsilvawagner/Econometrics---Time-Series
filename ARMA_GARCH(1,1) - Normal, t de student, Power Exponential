@@ -37,14 +37,10 @@ ARMAGARCH <- function(params,data,np,nq,nr,ns,dens) {
     v<-params[np+nq+nr+ns+2]
     verossim <- -(log(gamma((v+1)/2)/(sqrt((v-2)*pi)*gamma(v/2)))-log(sigma2)/2-((v+1)/2)*log(1+errors^2/(sigma2*(v-2))))
   } else if (dens=="GED") {
-    v <- params[np+nq+nr+ns+2]
-    lambda <- (2^(-2/v) * gamma(1/v)/gamma(3/v))^0.5
-    verossim <- -log(v) + 0.5 * (abs(errors/lambda))^v + log(lambda) +log(2^((v+1)/v)) + log(gamma(1/v))
-  } else if (dens=="PED") {
-    lambda<-params[np+nq+nr+ns+2]
-    gam<-params[np+nq+nr+ns+3]
-    verossim<- -(log(1-gam^2)-log(2)-log(gamma(1+1/lambda))-log(lambda)/lambda-(1/lambda)*((abs(data-gam*abs(data)))^lambda))
-  } else {
+	v <- params[np+nq+nr+ns+2]
+	 lambda <- (2^(-2/v) * gamma(1/v)/gamma(3/v))^0.5
+    verossim <- -log(v) + 0.5 * abs(errors/(lambda))^v + log(lambda * 2^(1+1/v) * gamma(1/v))
+	} else {
     verossim <- 0.5*(2*log(sqrt(sigma2)) + log(sigma2) + errors^2/sigma2 + log(2*pi))
   }
   return(list(LLF=sum(verossim),sigma2=sigma2,residuals=errors/sqrt(sigma2)))
@@ -54,7 +50,7 @@ ARMAGARCH <- function(params,data,np,nq,nr,ns,dens) {
 # install.packages("BatchGetSymbols")
 library(BatchGetSymbols)
 library(ggplot2)
-my.ticker <- c("^GSPC")
+my.ticker <- c("AAPL")
 first.date <- Sys.Date()-1500
 last.date <- Sys.Date()
 l.out <- BatchGetSymbols(tickers = my.ticker,first.date = first.date,last.date = last.date)
@@ -102,7 +98,6 @@ options(scipen=999)
 print(resultados$par)
 resultados.finais.GED <- ARMAGARCH(resultados$par,data=returns[,1],np=1,nq=1,nr=1,ns=1,dens="GED")
 df.GED <- data.frame(returns,sigma2=resultados.finais.GED$sigma2,residuals=resultados.finais.GED$residuals)
-
 
 # Estima modelo ARMA(1,1)-GARCH(1,1) -Pòwer Exponential Distribution
 init.params <- c(0.1,0.1,0.1,0.1,0.1,3,0.1)
@@ -154,7 +149,6 @@ p2.PED <- p2.PED + labs(x = 'Dates', y = 'Desvio padrão condicional')
 
 p3.PED <- ggAcf(df.PED$residuals^2, main="ACF do quadrado dos resíduos padronizados")
 
-p1
 grid.arrange(p2.normal, p2.t, p2.GED, p2.PED, p3.normal, p3.t, p3.GED, p3.PED, ncol=4, nrow=2)
 
 SQR<-c(sum(df.normal$residuals^2),sum(df.t$residuals^2),sum(df.GED$residuals^2),sum(df.PED$residuals^2))
