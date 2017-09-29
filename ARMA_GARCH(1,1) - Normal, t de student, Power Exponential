@@ -35,17 +35,17 @@ ARMAGARCH <- function(params,data,np,nq,nr,ns,dens) {
   }
   if (dens=="t") {
     v<-params[np+nq+nr+ns+2]
-    verossim <- -(log(gamma((v+1)/2)/(sqrt((v-2)*pi)*gamma(v/2)))-log(sigma2)/2-((v+1)/2)*log(1+errors^2/(sigma2*(v-2))))
+    verossim <- -(T*log(gamma((v+1)/2)/(sqrt((v-2)*pi)*gamma(v/2)))-sum(log(sigma2))/2-sum(((v+1)/2)*log(1+errors^2/(sigma2*(v-2)))))
   } else if (dens=="GED") {
     v <- params[np+nq+nr+ns+2]
     lambda <- (2^(-2/v) * gamma(1/v)/gamma(3/v))^0.5
-    verossim <- -log(v) + 0.5 * abs(errors/(lambda))^v + log(lambda * 2^(1+1/v) * gamma(1/v))
+    verossim <- -T*log(v) + sum(0.5 * abs(errors/(lambda))^v) + T*log(lambda * 2^(1+1/v) * gamma(1/v))
   } else if (dens=="PED") {
     lambda<-params[np+nq+nr+ns+2]
     gam<-params[np+nq+nr+ns+3]
-    verossim<- -(log(1-gam^2)-log(2)-log(gamma(1+1/lambda))-log(lambda)/lambda-(1/lambda)*((abs(data-gam*abs(data)))^lambda))
+    verossim<- -(T*log(1-gam^2)-T*log(2)-T*log(gamma(1+1/lambda))-T*log(lambda)/lambda-sum((1/lambda)*((abs(data-gam*abs(data)))^lambda)))
   } else {
-    verossim <- 0.5*(2*log(sqrt(sigma2)) + log(sigma2) + errors^2/sigma2 + log(2*pi))
+    verossim <- sum(0.5*(2*log(sqrt(sigma2))) + sum(log(sigma2)) + sum(errors^2/sigma2) + T*log(2*pi))
   }
   return(list(LLF=sum(verossim),sigma2=sigma2,residuals=errors/sqrt(sigma2)))
 }
@@ -127,7 +127,7 @@ p1.normal <- ggplot(data = returns, aes(x = datas, y = retornos))
 p1.normal <- p1.normal + geom_line(linetype="dashed") + geom_line(data = returns-df.normal$residuals, colour = "red")
 p1.normal <- p1.normal + labs(x = 'Dates', y = 'Log-Retornos Previstos')
 p1.normal <- p1.normal + ggtitle("Standard Normal")
-  
+
 p2.normal <- ggplot(data = df.normal, aes(x = datas, y = sqrt(sigma2)))
 p2.normal <- p2.normal + geom_line(colour = "gold4")
 p2.normal <- p2.normal + labs(x = 'Dates', y = 'Desvio padrão condicional')
