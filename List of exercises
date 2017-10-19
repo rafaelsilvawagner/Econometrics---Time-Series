@@ -1,0 +1,80 @@
+library(forecast)
+library(tseries)
+library(xts)
+library(chron)
+
+library(vars)
+juros<-read.csv("C://Users//rwagn//Documents//R//Econometria 2//juros.csv",sep=";")
+head(juros)
+names(juros)
+
+
+#passa as séries pra xts
+r1_ts<-as.xts(as.numeric(juros$r1),order.by=as.Date(juros$ï..DATE,format='%Y-%m-%d'))
+r3_ts<-as.xts(as.numeric(juros$r3),order.by=as.Date(juros$ï..DATE,format='%Y-%m-%d'))
+r10_ts<-as.xts(as.numeric(juros$r10),order.by=as.Date(juros$ï..DATE,format='%Y-%m-%d'))
+
+#essa é a taxa de juros de 1 ano pros eua
+ggtsdisplay(r1_ts)
+#essa é a de 3 anos 
+ggtsdisplay(r3_ts)
+#essa é a de 10 anos 
+ggtsdisplay(r10_ts)
+
+#realiza teste Dickey-Fuller no juros de 1 ano
+adf.test(r1_ts)
+ndiffs(r1_ts)
+#diferencia o r1
+r1_diff<-diff.xts(r1_ts)
+ndiffs(r1_diff)
+adf.test(r1_diff)
+ggtsdisplay(r10_diff)
+
+
+#realiza teste Dickey-Fuller no juros de 3 anos
+adf.test(r3_ts)
+ndiffs(r3_ts)
+#diferencia o r3
+r3_diff<-diff.xts(r3_ts)
+ndiffs(r3_diff)
+adf.test(r3_diff)
+ggtsdisplay(r3_diff)
+
+#realiza teste Dickey-Fuller no juros de 10 anos
+adf.test(r10_ts)
+ndiffs(r10_ts)
+#diferencia o r10
+r10_diff<-diff.xts(r10_ts)
+ndiffs(r10_diff)
+adf.test(r10_diff)
+ggtsdisplay(r10_diff)
+
+#legal agora você pode encontrar as séries originais em formato xts e a versão estacionária
+#vamos unir as séries
+juros_ts<-na.exclude(merge(r1_diff,r3_diff,r10_diff))
+colnames(juros_ts) <- c('Juros_1','Juros_3','Juros_10')
+#ve se parece que ta legal
+plot(juros_ts)
+#fazer um VAR(1)
+defasagem<-1
+var_juros_1 <- VAR(juros_ts, 1, type='both') 
+summary(var_juros_1)
+plot(var_juros_1)
+#faz um VAR
+teste_max<-40
+criterios<-VARselect(juros_ts, lag.max=teste_max)
+#plot a trajetória dos critérios de informação
+par(mfrow=c(2,2))
+plot(criterios$criteria[1,],main="AIC")
+plot(criterios$criteria[2,],main="HQ")
+plot(criterios$criteria[3,],main="SC")
+plot(criterios$criteria[4,],main="FPE")
+#conforme podemos ver pela analise gráfica o unico critério de informação que responde a super
+#parametrização é o critário de schartz, ao realizar a demonstração dessa análise em sala o professor
+#preferiu estimar um VAR mais parsimonioso que o indicado pelos criterios de informação, procederemos
+#com a mesma abordagem buscando diminuir a variancia do nosso modelo, pelo que vemos no gráfico do
+#SC há uma queda muito abrupta no critério de informação na 7º defasagem e depois estabiliza o critéria
+#logo nós iremos optar por utilizar 7 defasagens no nosso VAR.
+  
+
+
