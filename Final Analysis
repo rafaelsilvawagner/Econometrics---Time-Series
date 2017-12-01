@@ -1,0 +1,355 @@
+---
+title: "Analise de Resultados"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+---
+title: "Artigo Econometria 2"
+author: "Rafael Silva Wagner"
+date: "23 de novembro de 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+#Considerações Iniciais
+
+Esse relatório faz referência a avaliação da performance do algoritmo XGBoost, no problema da previsão de sinal dos retornos do ativo PETR4, durante o período de 26/05/2017 até 17/10/2017.
+
+#Carrega pacotes
+
+Carreguemos os pacotes necessários.
+
+```{r, message=FALSE,echo=TRUE}
+library(ggplot2)
+library(GetHFData)
+library(stringr)
+```
+
+#Carrega dados
+
+Carregaremos para dados de análise tanto a base de dados crua, com os dados agregados de 30 em 30 minutos, quanto os relatório de performance após a utilização do algoritmo.
+
+```{r , warning=FALSE,echo=TRUE}
+dados<-read.csv(
+  "C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//bases//base 30.csv")
+cn<-dados[,1]
+dados<-dados[,-1]
+rownames(dados)<-cn
+
+byClass<-read.csv(
+  "C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//byClass//byClass 1.csv")[,2]
+importance<-read.csv(
+  "C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//importance//importance 1.csv")[,2]
+overall<-read.csv(
+  "C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//overall//overall 1.csv")[,2]
+
+fin<-list()
+fin[[1]]<-read.csv("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//financeiro//financeiro 1.csv")
+
+for(i in 2:60){
+  byClass<-cbind(byClass,read.csv(sprintf("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//byClass//byClass %s.csv",i))[,2])
+  importance<-cbind(importance,read.csv(sprintf("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//importance//importance %s.csv",i))[,2])      
+  overall<-cbind(overall,read.csv(sprintf("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//overall//overall %s.csv",i))[,2])  
+  fin[[i]]<-read.csv(sprintf("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//financeiro//financeiro %s.csv",i))
+}
+
+byClass<-data.frame(t(byClass))
+importance<-data.frame(t(importance))
+overall<-data.frame(t(overall))
+
+
+colnames(byClass)<-str_replace_all(read.csv(
+  "C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//byClass//byClass 1.csv")[,1]," ","_")
+colnames(importance)<-read.csv(
+  "C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//importance//importance 1.csv")[,1]
+colnames(overall)<-read.csv(
+  "C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//overall//overall 1.csv")[,1]
+```
+
+#Conhecendo as variáveis
+
+Para verificar o comportamento do ativo no período negociado plotamos os gráficos do preço do ativo no período, assim como o número de negócio de compra e venda, volume de negócios de compra e venda, e o preço ponderado da compra e venda no respectivo período. Esses gráficos finais buscam apresentar características relacioandas as caracteerísticas da agressão.
+
+```{r,echo=TRUE}
+ggplot(dados, aes(1:nrow(dados))) + 
+  geom_line(aes(y = last.price, colour = "Preço")) + 
+  labs(x= "Observações",y = "Preços da PETR4")
+
+
+ggplot(dados, aes(1:nrow(dados))) + 
+  geom_line(aes(y = n.buys, colour = "Número de Compras")) + 
+  geom_line(aes(y = n.sells, colour = "Número de Vendas")) + 
+  labs(x= "Observações",y = "Número de Negócios")
+
+ggplot(dados, aes(1:nrow(dados))) + 
+  geom_line(aes(y = vol.buys, colour = "Volume de Compras")) + 
+  geom_line(aes(y = vol.sells, colour = "Volume de Vendas")) + 
+  labs(x= "Observações",y = "Volume de Negócios")
+
+ggplot(dados, aes(1:nrow(dados))) + 
+  geom_line(aes(y = weighted.price.buys, colour = "Preço Ponderado da Compra")) + 
+  geom_line(aes(y = weighted.price.sells, colour = "Preço Ponderado da Venda")) + 
+  labs(x= "Observações",y = "Preço Ponderado dos Negócios")
+
+
+```
+
+
+Podemos verificar que durante o período de treinamento dos dados, os 80% dos dados iniciais, o preço do ativo teve uma trajetória descendente, e no período de teste, os 20% finais houve uma trajetória ascendente.
+
+Podemos verificar que o número e volume de compras e vendas não apresentam claros padrões, e que o preço ponderado das negociações quando separadas entre negociações de compra e venda também não apresenta claros padrões.
+
+#Análise do desempénho do algoritmo
+
+Primeiramente avaliaremos a capacidade de previsão global, sem avaliar a performance em uma classe especifica.
+
+
+```{r,echo=TRUE}
+ggplot(overall, aes(1:60)) + 
+  geom_line(aes(y = Accuracy, colour = "V")) + 
+  geom_line(aes(y = AccuracyUpper, colour = "C"),linetype="dotted") +
+  geom_line(aes(y = AcuracyLower, colour = "C"),linetype="dotted") +
+  labs(x= "",y = "Acurácia Global")
+```
+
+O gráfico nos mostra um comportamento de melhora da qualidade das previsões até aproximadamente a agregação de nível 40, podemos ver uma brusca queda após ela e uma subsequente melhora após a agregação de número 45.
+
+
+Agora avaliaremos as estatísticas de desempenho de cada classe individualmente, a legenda V de venda faz referência a previsões onde o preço caiu. A legenda C de compra faz referência as previsões onde o preço subiu, a legenda N de neutro faz referência as previsões onde o preço ficou estável.
+
+```{r,echo=TRUE}
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Precision_Class_1, colour = "V")) + 
+  geom_line(aes(y = Precision_Class_2, colour = "N")) + 
+  geom_line(aes(y = Precision_Class_3, colour = "C")) + 
+  labs(x= "",y = "Precisão")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Sensitivity_Class_1, colour = "V")) + 
+  geom_line(aes(y = Sensitivity_Class_2, colour = "N")) + 
+  geom_line(aes(y = Sensitivity_Class_3, colour = "C")) + 
+  labs(x= "",y = "Sensitividade")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Specificity_Class_1, colour = "V")) + 
+  geom_line(aes(y = Specificity_Class_2, colour = "N")) + 
+  geom_line(aes(y = Specificity_Class_3, colour = "C")) + 
+  labs(x= "",y = "Especificidadde")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Pos_Pred_Value_Class_1, colour = "VP")) +
+  geom_line(aes(y = Pos_Pred_Value_Class_2, colour = "NP")) +
+  geom_line(aes(y = Pos_Pred_Value_Class_3, colour = "CP")) + 
+  geom_line(aes(y = Neg_Pred_Value_Class_1, colour = "VN")) + 
+  geom_line(aes(y = Neg_Pred_Value_Class_2, colour = "NN")) + 
+  geom_line(aes(y = Neg_Pred_Value_Class_3, colour = "CN")) + 
+  labs(x= "",y = "Valores Positivos/Negativos Previstos")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Recall_Class_1, colour = "V")) + 
+  geom_line(aes(y = Recall_Class_2, colour = "N")) + 
+  geom_line(aes(y = Recall_Class_3, colour = "C")) + 
+  labs(x= "",y = "Recall")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = F1_Class_1, colour = "V")) + 
+  geom_line(aes(y = F1_Class_2, colour = "N")) + 
+  geom_line(aes(y = F1_Class_3, colour = "C")) + 
+  labs(x= "",y = "F1")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Prevalence_Class_1, colour = "V")) + 
+  geom_line(aes(y = Prevalence_Class_2, colour = "N")) + 
+  geom_line(aes(y = Prevalence_Class_3, colour = "C")) + 
+  labs(x= "",y = "Prevalência")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Detection_Rate_Class_1, colour = "V")) + 
+  geom_line(aes(y = Detection_Rate_Class_2, colour = "N")) + 
+  geom_line(aes(y = Detection_Rate_Class_3, colour = "C")) + 
+  labs(x= "",y = "Taxa de Detecção")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Prevalence_Class_1, colour = "V")) + 
+  geom_line(aes(y = Prevalence_Class_2, colour = "N")) +
+  geom_line(aes(y = Prevalence_Class_3, colour = "C")) + 
+  labs(x= "",y = "Taxa de Prevalência")
+
+ggplot(byClass, aes(1:60)) + 
+  geom_line(aes(y = Balanced_Accuracy_Class_1, colour = "V")) + 
+  geom_line(aes(y = Balanced_Accuracy_Class_2, colour = "N")) + 
+  geom_line(aes(y = Balanced_Accuracy_Class_3, colour = "C")) + 
+  labs(x= "",y = "Acurácia Balanceada")
+```
+
+Primeiramente avaliamos o gráfico referente a precisão das previsões, esse gráfico demonstra uma maior capacidade de serem realizada previsões na venda, queda do preço, do que na compra, alta do preço. A boa qualidade das previsões  se manteve fixa até aproximadamente a agregação número 40, após ela a qualidade das previsões na compra e na venda se tornou similar, mas, pouquissimas vezes ambas as capacidade preditivas estiveram ao mesmo tempo acima de 50%
+
+Outro gráfico que chamamos a atenção é o F1, esse gráfico demonstra a média ponderada da precisão com a sensitividade, podemos ver que novamente na maior parte do período a previsão de venda teve um melhor desempenho do que a previsão de compra.
+
+
+#Análise das covariadas
+
+Seguem os gráficos do nível de importância das variáveis nas diferentes agregações temporais, aqui vale um comentário metodológico.
+
+Para não poluir demais os gráficos juntou-se a "importância" de cada variável nos diferentes períodos, por exemplo, no primeiro gráfico o nível de importância da variável "Direção" faz referência a importância das 4 defasagens dessa variável somadas.
+
+O eixo y está padronizado com a finalidade de se comparar os diferentes gráficos.
+
+```{r,echo=TRUE}
+imp_var<-importance[,1:30]
+
+for(i in 1:30){
+  imp_var[,i]<-importance[,i*1]+importance[,i*1]+importance[,i*3]+importance[,i*4]
+}
+ggplot(imp_var, aes(1:60)) +
+  ylim(0, 1)+
+  geom_line(aes(y = direction, colour = "Direção")) + 
+  geom_line(aes(y = signal, colour = "Sinal")) + 
+  geom_line(aes(y = period.ret, colour = "Retorno no Período")) + 
+  geom_line(aes(y = period.ret.volat, colour = "Volatilidade do Retorno no Período")) +
+  geom_line(aes(y = time_opening, colour = "Horário"))+
+  labs(title="Importancia das Variáveis do Preço",x= "",y = "Histórico da Negociação")
+ggplot(imp_var, aes(1:60)) +
+  ylim(0, 1)+
+  geom_line(aes(y = n.trades, colour = "Número de Negócios")) + 
+  geom_line(aes(y = n.buys, colour = "Número de Compras")) + 
+  geom_line(aes(y = n.sells, colour = "Número de Vendas")) + 
+  geom_line(aes(y = last.price, colour = "Último Preço")) + 
+  geom_line(aes(y = weighted.price, colour = "Preço Ponderado")) + 
+  labs(title="Importância das Variáveis dos Negócios",x= "",y = "Histórico da Negociação")
+  
+ggplot(imp_var, aes(1:60)) +
+  ylim(0, 1)+
+  geom_line(aes(y = sum.qtd, colour = "Quantidade Negociada")) + 
+  geom_line(aes(y = sum.vol, colour = "Volume Negociado")) + 
+  geom_line(aes(y = vol.buys, colour = "Volume de Compras")) + 
+  geom_line(aes(y = vol.sells, colour = "Volume de Venda")) + 
+  geom_line(aes(y = weighted.price.buys, colour = "Preço Ponderado das Compras")) + 
+  geom_line(aes(y = weighted.price.sells, colour = "Preço Ponderado das Vendas")) + 
+  labs(title="Importância das Variáveis dos Negócios",x= "",y = "Histórico da Negociação")
+ggplot(imp_var, aes(1:60)) +
+  ylim(0, 1)+
+  geom_line(aes(y = n.order.buy, colour = "Ordens de compra")) + 
+  geom_line(aes(y = avg.order.price.buy, colour = "Preço médio da ordem de compra")) + 
+  geom_line(aes(y = max.order.price.buy, colour = "Preço máximo da ordem de compra")) + 
+  geom_line(aes(y = min.order.price.buy, colour = "Preço minimo da ordem de compra")) + 
+  geom_line(aes(y = n.new.order.buy, colour = "Novas ordens de compra")) + 
+  geom_line(aes(y = n.update.order.buy, colour = "Ordens Atualizadas de Compra")) + 
+  geom_line(aes(y = n.cancelled.order.buy, colour = "Ordens Canceladas de Compra")) + 
+  labs(title="Importância das Variáveis das Ofertas de Compra",x= "",y = "Histórico da Negociação")
+ggplot(imp_var, aes(1:60)) +
+  ylim(0, 1)+
+  geom_line(aes(y = n.order.sell, colour = "Número de Ordens de Venda")) + 
+  geom_line(aes(y = avg.order.price.sell, colour = "Preço médio da ordem de venda")) + 
+  geom_line(aes(y = max.order.price.sell, colour = "Preço máximo da ordem de venda")) + 
+  geom_line(aes(y = min.order.price.sell, colour = "Preço mínimo da ordem de venda")) + 
+  geom_line(aes(y = avg.order.price.sell, colour = "Preço médio da ordem de venda")) + 
+  geom_line(aes(y = n.update.order.sell, colour = "Ordens Atualizadas de Venda")) + 
+  geom_line(aes(y = n.cancelled.order.sell, colour = "Ordens Canceladas de Venda")) + 
+  labs(title="Importância das Variáveis das Ofertas de Venda",x= "",y = "Histórico da Negociação")
+
+
+```
+
+
+Podemos verificar no primeiro gráfico que o horário em que foi realizada a previsão se destacou das demais variáveis.
+No segundo gráfico uma variável que se destacou foi o último preço, ressaltando que essa variável faz referência a importancia somada das 4 defasagens do preço. 
+No terceiro gráfico após a agregação de número 30 o Volume de vendas ganhou destaque; após a agregação 45 o Preço ponderado das Vendas se destacou.
+No quarto gráfico uma variável que teve destaque foi o Preço Médio da Ordem de Compra e o Número de Ordens Atualizadas de Compra.
+E no Quinto gráfico nas agregações finais se destacou o preço máximo da ordem de venda.
+
+#Análise das Defasagens Agregadas
+
+Agreguei todas as variáveis referentes aos 4 períodos presente na base de dados (t-1,t-2,t-3,t-4) de forma que possamos avaliar o ganho de adicionar mais uma defasagem de todas as variáveis. 
+
+Ou seja cada linha "Defasagem X" faz referência a importância de todas as variáveis defasadas em X somadas.
+
+
+```{r,echo=TRUE}
+imp_def<-data.frame(matrix(0,nrow=60,ncol=4),row.names=1:60,col.names=1:4)
+
+for(i in 1:4){
+  imp_def[,i]<-rowSums(importance[,(30*(i-1)+i):(30*i)])
+}
+colnames(imp_def)<-c("Atual","Primeira_Defasagem","Segunda_Defasagem","Terceira_Defasagem","Quarta_Defasagem")
+ggplot(imp_def, aes(1:60)) +
+  geom_line(aes(y = Atual, colour = "Primeira Defasagem")) + 
+  geom_line(aes(y = Primeira_Defasagem, colour = "Segunda Defasagem")) + 
+  geom_line(aes(y = Segunda_Defasagem, colour = "Terceira Defasagem")) + 
+  geom_line(aes(y = Terceira_Defasagem, colour = "Quarta Defasagem"))+ 
+  labs(title="Análise das Defasagens",x= "",y = "Impotancia das Defasagens")
+
+```
+
+Como se esperava na maior parte das agregações o principal grupo de variáveis é referente a primeira defasagem sendo que em algumas agregações as variáveis referentes a segunda e quarta defasagem também se tornam as mais relevantes.
+
+#Desempenho Financeiro
+
+```{r}
+correta<-10
+lote<-5000
+resultado<-data.frame(matrix(nrow=60,ncol=10))
+colnames(resultado)<-c("Agregacao","Num_Tot","Bruto_Tot","Liq_Tot","Num_Comp","Bruto_Comp","Liq_Comp",
+                       "Num_Vend","Bruto_Vend","Liq_Vend")
+resultado[,1]<-1:60
+for(i in 1:nrow(resultado)){
+  operacao<-fin[[i]][,3]
+  saldo<-fin[[i]][,5]-fin[[i]][,4]
+  saldo[operacao==1]<- -saldo[operacao==1]
+  resultado[i,2]<-sum(operacao!=2)
+  resultado[i,3]<-sum(saldo)*lote
+  resultado[i,4]<-sum(saldo)*lote-sum(operacao!=2)*correta
+  resultado[i,5]<-sum(operacao==3)*lote
+  resultado[i,6]<-sum(saldo[operacao==3])*lote
+  resultado[i,7]<-sum(saldo[operacao==3])*lote-sum(operacao==3)*correta
+  resultado[i,8]<-sum(operacao==1)*lote
+  resultado[i,9]<-sum(saldo[operacao==1])*lote
+  resultado[i,10]<-sum(saldo[operacao==1])*lote-sum(operacao==1)*correta
+}
+
+ggplot(resultado, aes(1:60)) +
+  geom_line(aes(y = Bruto_Tot, colour = "Saldo Total")) + 
+  geom_line(aes(y = Bruto_Comp, colour = "Saldo na Compra")) + 
+  geom_line(aes(y = Bruto_Vend, colour = "Saldo na Venda")) +
+  labs(title="Saldo Bruto das Operações 50 Lotes",x= "",y = "Saldo Financeiro Bruto")
+
+ggplot(resultado, aes(1:60)) +
+  geom_line(aes(y = Liq_Tot, colour = "Saldo Total")) + 
+  geom_line(aes(y = Liq_Comp, colour = "Saldo na Compra")) + 
+  geom_line(aes(y = Liq_Vend, colour = "Saldo na Venda")) +
+  labs(title="Saldo Líquido das Operações com R$10,00 de Corretagem 50 Lotes",x= "",y = "Saldo Financeiro Líquido")
+
+
+meia_hora_oper<-fin[[30]]
+meia_hora_oper<-cbind(meia_hora_oper,as.numeric(meia_hora_oper$predicted==meia_hora_oper$reference))
+
+
+colnames(meia_hora_oper)<-c("obs","reference","predicted","price_before","price_after","result")
+
+meia_hora_oper$result[meia_hora_oper$result==1]<-"Acertou"
+meia_hora_oper$result[meia_hora_oper$result==0]<-"Errou"
+
+meia_hora_oper$predicted[meia_hora_oper$predicted==1]<-"Venda"
+meia_hora_oper$predicted[meia_hora_oper$predicted==2]<-"Neutro"
+meia_hora_oper$predicted[meia_hora_oper$predicted==3]<-"Compra"
+
+group.colors <- c(Venda = "red", Neutro = "yellow", Compra ="green")
+
+ggplot(meia_hora_oper, aes(obs,price_before,colour = predicted)) + geom_point() +
+  scale_color_manual(values=group.colors)+  
+  labs(colour = "Operação", title="Negociações Realizadas") + 
+  xlab("Período") +
+  ylab("Preço") 
+
+group.colors <- c(Errou = "red", Acertou ="green")
+
+ggplot(meia_hora_oper, aes(obs,price_before,colour = result)) + geom_point() +
+  scale_color_manual(values=group.colors)+  
+  labs(colour = "Operação", title="Negociações Realizadas") + 
+  xlab("Período") +
+  ylab("Preço") 
+
+```
