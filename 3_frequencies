@@ -1,0 +1,175 @@
+require(data.table)
+require(xgboost)
+require(magrittr)
+require(dplyr)
+require(caret)
+require(forecast)
+require(ggplot2)
+#pega as bases de dados
+base60<-read.csv("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//base 60.csv")
+rownames(base60)<-base60[,1]
+base60<-base60[,-1]
+
+base5<-read.csv("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//base 5.csv")
+rownames(base5)<-base5[,1]
+base5<-base5[,-c(1,2,3)]
+
+base20<-read.csv("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//base 20.csv")
+rownames(base20)<-base20[,1]
+base20<-base20[,-c(1,2,3)]
+
+
+
+#tira as linhas que não é possível encontrar no 20 e no 5
+index5<-match(rownames(base60),rownames(base5))
+junta<-base60[!is.na(index5),]
+index20<-match(rownames(junta),rownames(base5))
+junta<-junta[!is.na(index20),]
+
+
+#acha os indices, no 20 e no 5 e junta 
+index5<-match(rownames(junta),rownames(base5))
+junta<-cbind(junta,base5[index5,])
+index20<-match(rownames(junta),rownames(base5))
+junta<-cbind(junta,base20[index20,])
+dates<-rownames(junta)
+
+#monta as matrizes a serem previstas
+preco_futuro<-data.table(junta[,1])
+signal<-data.table(junta[,2])
+reg<-data.table(junta[,-c(1,2)])
+rownames(signal)<-dates
+rownames(junta)<-dates
+
+#descobre os dias e o número de dias disponíveis
+#define o percentual inicial para previsão
+train_perc<-0.8
+#define a cada quantos porcento previsto reestimar o modelo
+fore_perc<-0.01
+dates<-unique(as.Date(rownames(junta)))
+number_days<-length(dates)
+num_train<-round(train_perc*number_days)
+num_retrain<-round(fore_perc*number_days)
+num_forecast<-number_days-num_train
+
+#define o numero de dias para treinar
+treinar<-350
+#define a cada quantos dias retreinar
+retreinar<-10
+#verifica quantas janelas serão necessárias
+janelas<-floor((length(dates)-treinar)/10)
+
+index_train<-!is.na(match(as.Date(rownames(junta)),dates[1:num_train]))
+
+for(i in 1:janelas){
+  #acha os dias desse loop
+  index_train<-!is.na(match(as.Date(rownames(junta)),dates[(i*10-9):(treinar+i*10-10)]))
+  index_test<-!is.na(match(as.Date(rownames(junta)),dates[(treinar+i*10-9):(treinar+i*10+1)]))
+  
+  train.reg<-as.matrix(reg[(index_train),])
+  train.signal<-as.matrix(signal[index_train,]-1)
+  
+  valid.reg<-as.matrix(reg[index_test,])
+  valid.signal<-as.matrix(signal[index_test,]-1)
+  
+  dtrain = xgb.DMatrix(data = train.reg, label = train.signal)
+  
+  numberOfClasses <- nrow(unique(train.signal))
+  ##############################
+  
+  
+  xgb_params <- list("objective" = "multi:softprob",
+                     "eval_metric" = "mlogloss",
+                     "num_class" = numberOfClasses)
+  nround    <-500 # number of XGBoost rounds
+  
+  cv.nfold  <- 5
+  #Fit cv.nfold * cv.nround XGB models and save OOF predictions
+  cv_model <- xgb.cv(params = xgb_params,
+                     data = dtrain, 
+                     nrounds = nround,
+                     nfold = cv.nfold,
+                     verbose = TRUE,
+                     prediction = TRUE)
+  #
+  
+  
+  cv<-(cv_model$evaluation_log$test_mlogloss_mean)
+  min<-min(cv)
+  dp<-cv_model$evaluation_log$test_mlogloss_std[which(min(cv)==cv)]
+  best<-which.max(cv < (min+dp))
+  
+  
+  
+  ggplot2::autoplot(as.ts(cbind(cv_model$evaluation_log$train_mlogloss_mean,cv_model$evaluation_log$test_mlogloss_mean)))
+  
+  
+  
+  ####
+  # Modelo xgboost para classificação multinomial
+  ####
+  
+  xgb_params <- list("objective" = "multi:softprob",
+                     "eval_metric" = "mlogloss",
+                     "num_class" = numberOfClasses)
+  xgModel = xgb.train(params = xgb_params,
+                      data = dtrain, 
+                      nround = best,
+                      verbose=TRUE)
+  xgboost.predict <- predict(xgModel, valid.reg)
+  
+  
+  test_prediction <- matrix(xgboost.predict, nrow = numberOfClasses,
+                            ncol=length(xgboost.predict)/numberOfClasses) %>%
+    t() %>%
+    data.frame() %>%
+    mutate(label = as.numeric(valid.signal) ,
+           max_prob = max.col(., "last"))
+  
+  
+  predicted = test_prediction$max_prob -1
+  
+  reference = test_prediction$label
+  
+  
+  juntou<-cbind(predicted,reference)
+  
+  if (exists("pred_ref")){
+    pred_ref<-rbind(pred_ref,juntou)
+  } else {
+    pred_ref<-juntou
+}
+}
+rownames(pred_ref)<-rownames(reg)[!index_train]
+write.table(pred_ref,"C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//precos")
+
+u = union(reference,predicted)
+t = table(factor(predicted, sort(u)), factor(reference, sort(u)))
+c <- confusionMatrix(t,mode="everything")
+
+
+
+c$table
+print(c)
+names <-  colnames(train.reg)
+importance_matrix = xgb.importance(feature_names = names, model = xgModel)
+gp = xgb.plot.importance(importance_matrix)
+#print(gp)
+
+
+diff<-data.frame(preco_futuro[!index_train,])-valid.reg[,2]
+diff[predicted==1,]<-0
+diff[predicted==0,]<- -diff[predicted==0,]
+diff<-cbind(diff,0)
+
+
+correta<-5
+lote<-5000
+
+diff[1,2]<-diff[1,1]*lote-correta
+
+for(i in 2:nrow(diff)){
+  diff[i,2]<-diff[(i-1),2]+diff[i,1]*lote-correta
+}
+
+autoplot(as.ts(diff[,2]))
