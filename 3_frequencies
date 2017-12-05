@@ -101,7 +101,7 @@ for(i in 1:janelas){
   
   
   
-  ggplot2::autoplot(as.ts(cbind(cv_model$evaluation_log$train_mlogloss_mean,cv_model$evaluation_log$test_mlogloss_mean)))
+  #ggplot2::autoplot(as.ts(cbind(cv_model$evaluation_log$train_mlogloss_mean,cv_model$evaluation_log$test_mlogloss_mean)))
   
   
   
@@ -112,6 +112,7 @@ for(i in 1:janelas){
   xgb_params <- list("objective" = "multi:softprob",
                      "eval_metric" = "mlogloss",
                      "num_class" = numberOfClasses)
+  
   xgModel = xgb.train(params = xgb_params,
                       data = dtrain, 
                       nround = best,
@@ -131,8 +132,12 @@ for(i in 1:janelas){
   
   reference = test_prediction$label
   
+  price_before<-valid.reg[,"last.price"]
   
-  juntou<-cbind(predicted,reference)
+  price_after<-preco_futuro[index_test]
+  
+  
+  juntou<-cbind(predicted,reference,price_before,price_after)
   
   if (exists("pred_ref")){
     pred_ref<-rbind(pred_ref,juntou)
