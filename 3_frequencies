@@ -205,7 +205,7 @@ preco<-ggplot(pred_ref, aes(1:nrow(pred_ref),price_before,colour = result)) + ge
 
 saldo<-ggplot(pred_ref, aes(1:nrow(pred_ref),caixa,colour = result)) + geom_point() +
   scale_color_manual(values=group.colors)+  
-  labs(colour = "Resultado", title="Negociações Realizadas") + 
+  labs(colour = "Resultado", title="Caixa Zero") + 
   xlab("Período") +
   ylab("Preço") 
 
