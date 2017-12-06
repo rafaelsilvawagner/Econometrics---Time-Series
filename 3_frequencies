@@ -4,7 +4,9 @@ require(magrittr)
 require(dplyr)
 require(caret)
 require(forecast)
+require(gridExtra)
 require(ggplot2)
+require(moments)
 #pega as bases de dados
 base60<-read.csv("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//base 60.csv")
 rownames(base60)<-base60[,1]
@@ -138,33 +140,33 @@ for(i in 1:janelas){
   
   
   juntou<-cbind(predicted,reference,price_before,price_after)
-  
+  rownames(juntou)<-rownames(signal)[index_test]
   if (exists("pred_ref")){
     pred_ref<-rbind(pred_ref,juntou)
   } else {
     pred_ref<-juntou
 }
 }
-rownames(pred_ref)<-rownames(reg)[!index_train]
+
 write.table(pred_ref,"C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//precos")
 
-u = union(reference,predicted)
-t = table(factor(predicted, sort(u)), factor(reference, sort(u)))
+pred_ref<-read.table("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//precos")
+u = union(pred_ref$reference,pred_ref$predicted)
+t = table(factor(pred_ref$predicted, sort(u)), factor(pred_ref$reference, sort(u)))
 c <- confusionMatrix(t,mode="everything")
 
 
 
 c$table
 print(c)
-names <-  colnames(train.reg)
-importance_matrix = xgb.importance(feature_names = names, model = xgModel)
-gp = xgb.plot.importance(importance_matrix)
+#names <-  colnames(train.reg)
+#importance_matrix = xgb.importance(feature_names = names, model = xgModel)
+#gp = xgb.plot.importance(importance_matrix)
 #print(gp)
 
 
-diff<-data.frame(preco_futuro[!index_train,])-valid.reg[,2]
-diff[predicted==1,]<-0
-diff[predicted==0,]<- -diff[predicted==0,]
+diff<-data.frame(pred_ref$V1-pred_ref$price_before)
+
 diff<-cbind(diff,0)
 
 
@@ -174,7 +176,48 @@ lote<-5000
 diff[1,2]<-diff[1,1]*lote-correta
 
 for(i in 2:nrow(diff)){
-  diff[i,2]<-diff[(i-1),2]+diff[i,1]*lote-correta
+  if(pred_ref$predicted[i]==2){
+    diff[i,2]<-diff[(i-1),2]+diff[i,1]*lote-correta
+  } else if(pred_ref$predicted[i]==1) {
+    diff[i,2]<-diff[(i-1),2]
+  } else if(pred_ref$predicted[i]==0) {
+    diff[i,2]<-diff[(i-1),2]-diff[i,1]*lote-correta
+  }
 }
 
-autoplot(as.ts(diff[,2]))
+pred_ref<-cbind(pred_ref,diff)
+
+result<-pred_ref$predicted==pred_ref$reference
+pred_ref<-cbind(pred_ref,result)
+
+
+pred_ref$result[pred_ref$result=="TRUE"]<-"Acertou"
+pred_ref$result[pred_ref$result=="FALSE"]<-"Errou"
+group.colors <- c(Errou = "red", Acertou ="green")
+colnames(pred_ref)<-c("predicted","reference","price_before","price_after","saldo_oper","caixa","result")
+
+
+preco<-ggplot(pred_ref, aes(1:nrow(pred_ref),price_before,colour = result)) + geom_point() +
+  scale_color_manual(values=group.colors)+  
+  labs(colour = "Resultado", title="Preço do Ativo") + 
+  xlab("Período") +
+  ylab("Preço") 
+
+saldo<-ggplot(pred_ref, aes(1:nrow(pred_ref),caixa,colour = result)) + geom_point() +
+  scale_color_manual(values=group.colors)+  
+  labs(colour = "Resultado", title="Negociações Realizadas") + 
+  xlab("Período") +
+  ylab("Preço") 
+
+
+gridExtra::grid.arrange(saldo,preco,nrow=2, ncol=1)
+
+
+ggplot(pred_ref,aes(x=saldo_oper,group=result,fill=result))+
+  scale_color_manual(values=group.colors)+
+  geom_histogram(position="dodge",binwidth=0.01)+theme_bw()
+
+
+momentos<-cbind(all.moments(pred_ref$saldo_oper[pred_ref$result=="Acertou"],order.max=3,central=TRUE),
+                all.moments(pred_ref$saldo_oper[pred_ref$result=="Errou"],order.max=3,central=TRUE))
+colnames(momentos)<-c("Acertou","Errou")
