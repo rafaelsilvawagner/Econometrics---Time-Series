@@ -6,6 +6,8 @@ require(caret)
 require(forecast)
 require(gridExtra)
 require(ggplot2)
+require(mlogit)
+require(nnet)
 require(moments)
 #pega as bases de dados
 base60<-read.csv("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//base 60.csv")
@@ -25,16 +27,17 @@ base20<-base20[,-c(1,2,3)]
 #tira as linhas que não é possível encontrar no 20 e no 5
 index5<-match(rownames(base60),rownames(base5))
 junta<-base60[!is.na(index5),]
-index20<-match(rownames(junta),rownames(base5))
-junta<-junta[!is.na(index20),]
-
-
-#acha os indices, no 20 e no 5 e junta 
 index5<-match(rownames(junta),rownames(base5))
 junta<-cbind(junta,base5[index5,])
-index20<-match(rownames(junta),rownames(base5))
+
+
+index20<-match(rownames(junta),rownames(base20))
+junta<-junta[!is.na(index20),]
+index20<-match(rownames(junta),rownames(base20))
+
 junta<-cbind(junta,base20[index20,])
 dates<-rownames(junta)
+
 
 #monta as matrizes a serem previstas
 preco_futuro<-data.table(junta[,1])
@@ -42,6 +45,9 @@ signal<-data.table(junta[,2])
 reg<-data.table(junta[,-c(1,2)])
 rownames(signal)<-dates
 rownames(junta)<-dates
+
+
+colnames(reg)<-c(paste(colnames(base60[,-c(1,2)]),c(60),sep="."),paste(colnames(base60[,-c(1,2)]),c(5),sep="."),paste(colnames(base60[,-c(1,2)]),c(20),sep="."))
 
 #descobre os dias e o número de dias disponíveis
 #define o percentual inicial para previsão
@@ -64,6 +70,12 @@ janelas<-floor((length(dates)-treinar)/10)
 index_train<-!is.na(match(as.Date(rownames(junta)),dates[1:num_train]))
 
 for(i in 1:janelas){
+  print(paste("loop",i))
+  ##################################################
+  ################Parte do LOGIT####################
+  ##################################################
+  
+  print(paste("loop",i))
   #acha os dias desse loop
   index_train<-!is.na(match(as.Date(rownames(junta)),dates[(i*10-9):(treinar+i*10-10)]))
   index_test<-!is.na(match(as.Date(rownames(junta)),dates[(treinar+i*10-9):(treinar+i*10+1)]))
@@ -130,16 +142,51 @@ for(i in 1:janelas){
            max_prob = max.col(., "last"))
   
   
-  predicted = test_prediction$max_prob -1
+  predicted.xgboost = test_prediction$max_prob -1
   
   reference = test_prediction$label
   
   price_before<-valid.reg[,"last.price"]
   
   price_after<-preco_futuro[index_test]
+  colnames(price_after)<-"price_after"
   
+  ##################################################
+  ################Parte do LOGIT####################
+  ##################################################
   
-  juntou<-cbind(predicted,reference,price_before,price_after)
+  #acha os dias desse loop
+  index_train<-!is.na(match(as.Date(rownames(junta)),dates[(i*10-9):(treinar+i*10-10)]))
+  index_test<-!is.na(match(as.Date(rownames(junta)),dates[(treinar+i*10-9):(treinar+i*10+1)]))
+  
+  train.reg<-as.matrix(reg[(index_train),])
+  train.signal<-as.matrix(signal[index_train,]-1)
+  train<-data.frame(cbind(train.reg,train.signal))
+  
+  valid.reg<-as.matrix(reg[index_test,])
+  valid.signal<-as.matrix(signal[index_test,]-1)
+  valid<-data.frame(cbind(valid.reg,valid.signal))
+  
+  valid<-valid[,qr(train)$pivot[1:qr(train)$rank]]
+  train<-train[,qr(train)$pivot[1:qr(train)$rank]]
+  
+  colnames(train)<-c(colnames(train)[-ncol(train)],"direction")
+  colnames(valid)<-c(colnames(valid)[-ncol(valid)],"direction")
+  
+  train$direction<-factor(train$direction)
+  train$direction<-relevel(train$direction,ref="1")
+  
+  valid$direction<-factor(valid$direction)
+  valid$direction<-relevel(valid$direction,ref="1")
+  
+  mymodel<-multinom(direction~.,train)
+  predicted.logit<-as.matrix(predict(mymodel,valid))
+  
+  ##################################################
+  ################Junta TUDO####################
+  ##################################################
+  
+  juntou<-cbind(predicted.xgboost,predicted.logit,reference,price_before,price_after)
   rownames(juntou)<-rownames(signal)[index_test]
   if (exists("pred_ref")){
     pred_ref<-rbind(pred_ref,juntou)
@@ -151,18 +198,22 @@ for(i in 1:janelas){
 write.table(pred_ref,"C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//precos")
 
 pred_ref<-read.table("C://Users//Usuario//Desktop//Rafael - Dissertação//treated_variables//Artigo André//longa//precos")
+
+
+#Avalia XGBOOST
 u = union(pred_ref$reference,pred_ref$predicted)
 t = table(factor(pred_ref$predicted, sort(u)), factor(pred_ref$reference, sort(u)))
 c <- confusionMatrix(t,mode="everything")
-
-
-
 c$table
 print(c)
-#names <-  colnames(train.reg)
-#importance_matrix = xgb.importance(feature_names = names, model = xgModel)
-#gp = xgb.plot.importance(importance_matrix)
-#print(gp)
+
+
+#Avalia LOGIT
+u = union(pred_ref$reference,pred_ref$predicted.logit)
+t = table(factor(pred_ref$predicted.logit, sort(u)), factor(pred_ref$reference, sort(u)))
+c <- confusionMatrix(t,mode="everything")
+c$table
+print(c)
 
 
 diff<-data.frame(pred_ref$V1-pred_ref$price_before)
